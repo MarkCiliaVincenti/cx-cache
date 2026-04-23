@@ -1,4 +1,4 @@
-﻿using System.Security.Cryptography;
+using System.Security.Cryptography;
 using System.Text;
 using cx.BinarySerializer.EFCache;
 using Microsoft.Extensions.Caching.Distributed;
@@ -255,16 +255,14 @@ public class DataRedisCache : IDataRedisCache
     /// </summary>
     /// <param name="entitySets"></param>
     /// <returns></returns>
-    private IEnumerable<string> AddExtraInvalidateSets(IEnumerable<string> entitySets)
+    HashSet<string> AddExtraInvalidateSets(IEnumerable<string> entitySets)
     {
-        var allInvalidateSets = new List<string>(entitySets);
+        var allInvalidateSets = new HashSet<string>(entitySets);
         if (_cacheSettings.ExtraInvalidateSets == null) return allInvalidateSets;
         foreach (var item in entitySets)
         {
             if (!_cacheSettings.ExtraInvalidateSets.ContainsKey(item)) continue;
-            var invalidateSet = _cacheSettings.ExtraInvalidateSets[item];
-            if (allInvalidateSets.Contains(invalidateSet)) continue;
-            allInvalidateSets.Add(invalidateSet);
+            allInvalidateSets.UnionWith(_cacheSettings.ExtraInvalidateSets[item]?.Split(",") ?? []);
         }
         return allInvalidateSets;
     }
@@ -351,7 +349,7 @@ public class DataRedisCache : IDataRedisCache
             return (false, message);
         }
     }
-    private (bool, string) GetHashKey(string key)
+    (bool, string) GetHashKey(string key)
     {
         string prefix = _cacheSettings.CacheKeyPrefix;
         bool hashed = false;
@@ -360,13 +358,11 @@ public class DataRedisCache : IDataRedisCache
 
         //Looking up large Keys in Redis can be expensive (comparing Large Strings), so if keys are large, hash them, otherwise if keys are short just use as-is
         if (key.Length <= 128) return (hashed, key.StartsWith(prefix) ? key : (prefix + key));
-        using (var sha = SHA1.Create())
-        {
-            key = Convert.ToBase64String(sha.ComputeHash(Encoding.UTF8.GetBytes(key)));
-            hashed = true;
-            return (hashed, prefix + key);
-        }
+        key = Convert.ToBase64String(SHA1.HashData(Encoding.UTF8.GetBytes(key)));
+        hashed = true;
+        return (hashed, prefix + key);
     }
+
     private RedisKey AddCacheQualifier(string entitySet)
     {
         return string.Concat(_cacheSettings.EntityCachePrefix, ".", entitySet);
